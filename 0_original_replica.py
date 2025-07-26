@@ -8,7 +8,14 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 
-predsss = []
+# Files Needed:
+# Data/esm2_embeddings_loci_per_protein.csv
+# Data/esm2_embeddings_rbp.csv
+# Data/phage_host_interactions.csv
+# grouping/grouping_1.pkl, _995, _990, _950, _985, _980, _975 (7 files total)
+# Data/kaptive_results.tsv
+
+predictions = []
 
 if not os.path.isfile('Data/combined_embeddings_per_protein.csv'):
     print("Loading and preparing data from scratch...")
@@ -49,11 +56,11 @@ if not os.path.isfile('Data/combined_embeddings_per_protein.csv'):
     ], axis=1)
 
     final_df.to_csv('Data/combined_embeddings_per_protein.csv', index=False)
-    print("Final per-protein dataframe saved as 'combined_embeddings_per_protein.csv'.")
+    print("Final per-protein dataframe saved as 'Data/combined_embeddings_per_protein.csv'.")
 
 
 else:
-    print("Loading from existing 'combined_embeddings_per_protein.csv' file.")
+    print("Loading from existing 'Data/combined_embeddings_per_protein.csv' file.")
     final_df = pd.read_csv('Data/combined_embeddings_per_protein.csv',
     dtype={'accession': str})
     print("Data loaded successfully.")
@@ -157,7 +164,7 @@ for i, threshold in enumerate(thresholds):
         fpr, tpr, _ = roc_curve(label_max, scores_max)
         rauclr = round(auc(fpr, tpr), 3)
         print(f"Final AUC after host-averaged adjustment: {rauclr}")
-        predsss.append((label_max, scores_max, rauclr))
+        predictions.append((label_max, scores_max, rauclr))
     else:
         print(f"Final evaluation failed at {tstr[i]}% threshold due to single-class predictions.")
 
@@ -167,4 +174,4 @@ file_path = 'Results/0_AUCs_original_replica.pkl'
 
 # --- Save (dump) the tuple into a pickle file ---
 with open(file_path, 'wb') as f:
-    pickle.dump(predsss, f)
+    pickle.dump(predictions, f)

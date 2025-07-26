@@ -9,24 +9,23 @@ import os.path
 import pickle
 
 
-predsss = []
-
 # Files Needed:
-# esm2_embeddings_loci_per_protein.csv
-# esm2_embeddings_rbp.csv
-# phage_host_interactions.csv
+# Data/esm2_embeddings_loci_per_protein.csv
+# Data/esm2_embeddings_rbp.csv
+# Data/phage_host_interactions.csv
 # grouping/grouping_1.pkl, _995, _990, _950, _985, _980, _975 (7 files total)
-# kaptive_results.tsv
+# Data/kaptive_results.tsv
 
 
+predictions = []
 
-if not os.path.isfile('combined_embeddings_per_protein.csv'):
+if not os.path.isfile('Data/combined_embeddings_per_protein.csv'):
     print("Loading and preparing data from scratch...")
 
     # --- LOAD AND PREPARE DATA ---
-    embeddings_loci_protein = pd.read_csv("esm2_embeddings_loci_per_protein.csv")
-    embeddings_rbp = pd.read_csv("esm2_embeddings_rbp.csv")
-    phage_host_interactions = pd.read_csv('phage_host_interactions.csv')
+    embeddings_loci_protein = pd.read_csv("Data/esm2_embeddings_loci_per_protein.csv")
+    embeddings_rbp = pd.read_csv("Data/esm2_embeddings_rbp.csv")
+    phage_host_interactions = pd.read_csv('Data/phage_host_interactions.csv')
 
     # Reshape the interaction matrix to get (host, phage, label) rows
     interactions_melted = phage_host_interactions.melt(
@@ -58,13 +57,13 @@ if not os.path.isfile('combined_embeddings_per_protein.csv'):
         merged[['label']]
     ], axis=1)
 
-    final_df.to_csv('combined_embeddings_per_protein.csv', index=False)
+    final_df.to_csv('Data/combined_embeddings_per_protein.csv', index=False)
     print("Final per-protein dataframe saved as 'combined_embeddings_per_protein.csv'.")
 
 
 else:
     print("Loading from existing 'combined_embeddings_per_protein.csv' file.")
-    final_df = pd.read_csv('combined_embeddings_per_protein.csv',
+    final_df = pd.read_csv('Data/combined_embeddings_per_protein.csv',
     dtype={'accession': str})
     print("Data loaded successfully.")
 
@@ -86,7 +85,7 @@ grouping_files = [
 
 
 
-df_sero = pd.read_csv("kaptive_results.tsv", sep="\t")
+df_sero = pd.read_csv("Data/kaptive_results.tsv", sep="\t")
 
 df_sero = df_sero[["Assembly", "Best match type", "Match confidence"]]
 
@@ -196,16 +195,60 @@ for i, threshold in enumerate(thresholds):
         fpr, tpr, _ = roc_curve(label_max, scores_max)
         rauclr = round(auc(fpr, tpr), 3)
         print(f"Final AUC with max protein-pair scoring: {rauclr}")
-        predsss.append((label_max, scores_max, rauclr))
+        predictions.append((label_max, scores_max, rauclr))
     else:
         print(f"Final evaluation failed at {tstr[i]}% threshold due to single-class predictions.")
-
-
-
 
 
 file_path = 'Results/3_AUCs_max_max_sero.pkl'
 
 # --- Save (dump) the tuple into a pickle file ---
 with open(file_path, 'wb') as f:
-    pickle.dump(predsss, f)
+    pickle.dump(predictions, f)
+
+
+
+# --- TRAIN A MODEL ON ALL DATA (NO VALIDATION) ---
+print("\nTraining final model on the full dataset (no validation split)...")
+
+# Prepare the serotype data again
+df_sero_filtered = df_sero.copy()
+one_hot_sero = pd.get_dummies(df_sero_filtered["Best match type"], prefix="sero_")
+df_sero_encoded = pd.concat([df_sero_filtered[["Assembly"]], one_hot_sero], axis=1)
+
+# Drop host protein embeddings
+host_cols = [col for col in final_df.columns if col.startswith("host_")]
+full_df = final_df.drop(columns=host_cols)
+
+# Merge encoded serotype info
+full_df = full_df.merge(df_sero_encoded, how="left", left_on="accession", right_on="Assembly").drop(columns=["Assembly"])
+full_df.fillna(0, inplace=True)
+full_df.drop_duplicates(inplace=True)
+
+# Extract features and labels
+X_full = full_df[[col for col in full_df.columns if col.startswith(('sero_', 'virus_'))]].values
+y_full = full_df['label'].astype(int).values
+
+imbalance = sum(y_full == 1) / sum(y_full == 0) if sum(y_full == 0) else 1
+
+# Train the final model
+final_model = XGBClassifier(
+    scale_pos_weight=1 / imbalance,
+    learning_rate=0.3,
+    n_estimators=250,
+    max_depth=7,
+    eval_metric='logloss',
+    use_label_encoder=False,
+    tree_method="gpu_hist",
+    predictor="gpu_predictor",
+    device="cuda"
+)
+
+final_model.fit(X_full, y_full)
+
+# Save the final model to disk
+final_model_path = 'Model/model_full_data_xgb.pkl'
+with open(final_model_path, 'wb') as f:
+    pickle.dump(final_model, f)
+
+print(f"Final model trained on all data and saved to '{final_model_path}'.")
