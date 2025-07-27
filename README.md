@@ -24,6 +24,19 @@ The "grouping" folder contains Klebsiella hosts grouped by genetic similarity at
 ## Results
 The "Results" folder contains the results of LOGO training algorithms at each similarity threshold, and a Jupyter Notebook used to generate the graphs in my paper from those results.
 
+## Python Files
+### 0_original_replica.py
+Replicates PHL paper's methodology and results, having downloaded individual phage RBPs and host proteins, then averaging them for both phage and host.
+
+### 1_max_max.py
+Trains models on individual phage RBPs and host proteins, with all possible protein-protein combinations. Returns a surprisingly high ROC-AUC, but is shown to be significantly worse when evaluating PR curves.
+ 
+### 2_max_max_original_sero.py
+Introduces host grouped by serotype instead of keeping separate serotype-related proteins. Replicates PHL methodology on phages (averaging RBPs embeddings) and shows no drop in performance while significantly reducing the number of features, at the cost of not being generalizable to hosts with unidentified serotypes.
+
+### 3_max_max_sero.py
+Trains models matching individual phage RBPs to hot serotypes. Shows very promising performance, hinting at individual proteins' role in determining adsorption.
+
 
 
 
